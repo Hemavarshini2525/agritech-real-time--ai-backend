@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+requests
+python-dotenv
+scikit-learn
+joblib
+pillow
+numpy
+torch
+torchvision
+pandas
