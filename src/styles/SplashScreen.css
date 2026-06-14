@@ -1,0 +1,10 @@
+.splash {
+  height: 100vh;
+  background: #2e7d32;
+  color: white;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
