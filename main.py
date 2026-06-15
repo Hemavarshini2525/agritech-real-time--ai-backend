@@ -62,6 +62,26 @@ def load_encoder():
 
 def load_disease_model():
     global _disease_model
+
+    if _disease_model is not None:
+        return _disease_model
+
+    print("Loading disease model...")
+
+    import torch
+
+    _disease_model = torch.load(
+        DISEASE_MODEL_PATH,
+        map_location="cpu",
+        weights_only=False
+    )
+
+    print("Disease model loaded.")
+
+    _disease_model.eval()
+
+    return _disease_model
+    global _disease_model
     if _disease_model is not None:
         return _disease_model
 
