@@ -64,6 +64,8 @@ def load_disease_model():
     global _disease_model
     if _disease_model is not None:
         return _disease_model
+
+    import torch
     if not os.path.exists(DISEASE_MODEL_PATH):
         raise FileNotFoundError(f"Disease model not found: {DISEASE_MODEL_PATH}")
     try:
