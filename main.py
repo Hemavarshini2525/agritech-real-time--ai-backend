@@ -64,7 +64,6 @@ def load_disease_model():
     global _disease_model
     if _disease_model is not None:
         return _disease_model
-    import torch
     if not os.path.exists(DISEASE_MODEL_PATH):
         raise FileNotFoundError(f"Disease model not found: {DISEASE_MODEL_PATH}")
     try:
@@ -223,9 +222,11 @@ def soil(lat: float, lon: float):
 
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
+    import torch 
+    
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
         raise HTTPException(status_code=400, detail="Unsupported image type")
-    import torch 
+    
     image_bytes = await file.read()
     try:
         model = load_disease_model()
