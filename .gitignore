@@ -2,6 +2,6 @@
 __pycache__/
 *.db
 uploads/
-*.pkl
+
 *.csv
 *.xlsx  
