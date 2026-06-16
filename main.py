@@ -217,8 +217,7 @@ async def predict_disease(file: UploadFile = File(...)):
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
 
         # Call Hugging Face Gradio API
-        hf_url = "https://hemavarshini2525-agritech-disease-detection.hf.space/run/predict"
-
+        hf_url = hf_url = "https://hemavarshini2525-agritech-disease-detection.hf.space/api/predict"
         payload = {
             "data": [
                 {
@@ -259,7 +258,7 @@ async def predict_disease(file: UploadFile = File(...)):
         raise HTTPException(status_code=504, detail="Disease detection timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(e)}")
-
+    
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
     model_path    = "fertilizer_model.pkl"
