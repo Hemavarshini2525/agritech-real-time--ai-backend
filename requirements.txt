@@ -7,6 +7,5 @@ scikit-learn
 joblib
 pillow
 numpy
-torch
-
 pandas
+httpx

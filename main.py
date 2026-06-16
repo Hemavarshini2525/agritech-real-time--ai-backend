@@ -70,31 +70,21 @@ def load_disease_model():
 
     import torch
 
+    if not os.path.exists(DISEASE_MODEL_PATH):
+        raise FileNotFoundError(
+            f"Disease model not found: {DISEASE_MODEL_PATH}"
+        )
+
     _disease_model = torch.load(
         DISEASE_MODEL_PATH,
         map_location="cpu",
         weights_only=False
     )
 
-    print("Disease model loaded.")
-
     _disease_model.eval()
 
-    return _disease_model
-    global _disease_model
-    if _disease_model is not None:
-        return _disease_model
+    print("Disease model loaded.")
 
-    import torch
-    if not os.path.exists(DISEASE_MODEL_PATH):
-        raise FileNotFoundError(f"Disease model not found: {DISEASE_MODEL_PATH}")
-    try:
-        # Load the full saved PyTorch model object.
-        _disease_model = torch.load(DISEASE_MODEL_PATH, map_location="cpu", weights_only=False)
-        if hasattr(_disease_model, "eval"):
-            _disease_model.eval()
-    except Exception as e:
-        raise FileNotFoundError(f"Failed to load disease model: {e}")
     return _disease_model
 
 def load_disease_encoder():
@@ -144,38 +134,12 @@ def weather(location: str):
     return result
 
 
-@app.post("/save-advisory")
-def save(data: AdvisoryInput):
-    weather_data = get_weather(data.location)
-    weather_info = str(weather_data)
-    record = {
-        "farmer_query": data.farmer_query,
-        "disease": data.disease,
-        "fertilizer": data.fertilizer,
-        "irrigation": data.irrigation,
-        "weather_info": weather_info,
-        "advisory_text": data.advisory_text
-    }
-    save_advisory(record)
-    return {"message": "Advisory saved successfully ✅"}
-
-
-@app.get("/history")
-def history():
-    rows = get_all_history()
-    return [
-        {
-            "id": row[0],
-            "farmer_query": row[1],
-            "disease": row[2],
-            "fertilizer": row[3],
-            "irrigation": row[4],
-            "weather_info": row[5],
-            "advisory_text": row[6],
-            "created_at": row[7]
-        }
-        for row in rows
-    ]
+@app.get("/soil")
+def soil(lat: float, lon: float):
+    result = get_soil_data(lat, lon)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 @app.post("/predict")
@@ -234,50 +198,18 @@ def predict(input: PredictionInput):
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
 
-@app.get("/soil")
-def soil(lat: float, lon: float):
-    result = get_soil_data(lat, lon)
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
-    return result
+
+
 
 
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
-    import torch 
+    return {
+        "message": "Use Hugging Face Space for disease detection",
+        "url": "https://huggingface.co/spaces/Hemavarshini2525/agritech-disease-detection",
+        "status": "redirect"
+    }
     
-    if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
-        raise HTTPException(status_code=400, detail="Unsupported image type")
-    
-    image_bytes = await file.read()
-    try:
-        model = load_disease_model()
-        encoder = load_disease_encoder()
-        X = preprocess_image(image_bytes, target_size=(224, 224))
-
-        input_tensor = torch.from_numpy(X).float()
-        if input_tensor.ndim == 3:
-            input_tensor = input_tensor.unsqueeze(0)
-
-        with torch.no_grad():
-            outputs = model(input_tensor)
-            if isinstance(outputs, (tuple, list)):
-                outputs = outputs[0]
-            probs = torch.softmax(outputs, dim=1).cpu().numpy()[0]
-            predicted_index = int(np.argmax(probs))
-
-        predicted_label = encoder.inverse_transform([predicted_index])[0]
-
-        return {
-            "disease_prediction": str(predicted_label),
-            "prediction_index": predicted_index,
-            "probabilities": probs.tolist()
-        }
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(exc)}")
-
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
     model_path    = "fertilizer_model.pkl"
@@ -331,3 +263,38 @@ def fertilizer_recommendation(data: FertilizerInput):
         "recommended_fertilizer": result[0],
         "message": f"Apply {result[0]} based on your soil and crop data"
     }
+
+
+@app.post("/save-advisory")
+def save(data: AdvisoryInput):
+    weather_data = get_weather(data.location)
+    weather_info = str(weather_data)
+    record = {
+        "farmer_query": data.farmer_query,
+        "disease": data.disease,
+        "fertilizer": data.fertilizer,
+        "irrigation": data.irrigation,
+        "weather_info": weather_info,
+        "advisory_text": data.advisory_text
+    }
+    save_advisory(record)
+    return {"message": "Advisory saved successfully ✅"}
+
+
+@app.get("/history")
+def history():
+    rows = get_all_history()
+    return [
+        {
+            "id": row[0],
+            "farmer_query": row[1],
+            "disease": row[2],
+            "fertilizer": row[3],
+            "irrigation": row[4],
+            "weather_info": row[5],
+            "advisory_text": row[6],
+            "created_at": row[7]
+        }
+        for row in rows
+    ]
+
