@@ -202,6 +202,7 @@ def predict(input: PredictionInput):
 
 
 
+
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
@@ -210,50 +211,38 @@ async def predict_disease(file: UploadFile = File(...)):
     image_bytes = await file.read()
 
     try:
-        import httpx
-        import base64
+        import tempfile
+        import os
+        from gradio_client import Client, handle_file
 
-        # Convert image to base64
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        # Save image temporarily
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".jpg"
+        ) as tmp:
+            tmp.write(image_bytes)
+            tmp_path = tmp.name
 
-        # Call Hugging Face Gradio API
-        hf_url = hf_url = "https://hemavarshini2525-agritech-disease-detection.hf.space/api/predict"
-        payload = {
-            "data": [
-                {
-                    "name": file.filename,
-                    "data": f"data:{file.content_type};base64,{image_b64}"
-                }
-            ]
+        # Call Hugging Face Space
+        client = Client("Hemavarshini2525/agritech-disease-detection")
+        result = client.predict(
+            image=handle_file(tmp_path),
+            api_name="/predict_disease"
+        )
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        return {
+            "disease_prediction": result,
+            "status": "success"
         }
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                hf_url,
-                json=payload,
-                headers={"Content-Type": "application/json"}
-            )
-
-        if response.status_code == 200:
-            result = response.json()
-            output_text = result["data"][0]
-
-            # Parse "Disease: X\nConfidence: Y%"
-            lines = output_text.strip().split("\n")
-            disease = lines[0].replace("Disease: ", "")
-            confidence = lines[1].replace("Confidence: ", "") if len(lines) > 1 else "N/A"
-
-            return {
-                "disease_prediction": disease,
-                "confidence": confidence,
-                "status": "success"
-            }
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Hugging Face error: {response.status_code}"
-            )
-
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Disease prediction failed: {str(e)}"
+        )
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Disease detection timed out")
     except Exception as e:
