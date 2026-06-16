@@ -204,12 +204,62 @@ def predict(input: PredictionInput):
 
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
-    return {
-        "message": "Use Hugging Face Space for disease detection",
-        "url": "https://huggingface.co/spaces/Hemavarshini2525/agritech-disease-detection",
-        "status": "redirect"
-    }
-    
+    if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
+        raise HTTPException(status_code=400, detail="Unsupported image type")
+
+    image_bytes = await file.read()
+
+    try:
+        import httpx
+        import base64
+
+        # Convert image to base64
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Call Hugging Face Gradio API
+        hf_url = "https://hemavarshini2525-agritech-disease-detection.hf.space/run/predict"
+
+        payload = {
+            "data": [
+                {
+                    "name": file.filename,
+                    "data": f"data:{file.content_type};base64,{image_b64}"
+                }
+            ]
+        }
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(
+                hf_url,
+                json=payload,
+                headers={"Content-Type": "application/json"}
+            )
+
+        if response.status_code == 200:
+            result = response.json()
+            output_text = result["data"][0]
+
+            # Parse "Disease: X\nConfidence: Y%"
+            lines = output_text.strip().split("\n")
+            disease = lines[0].replace("Disease: ", "")
+            confidence = lines[1].replace("Confidence: ", "") if len(lines) > 1 else "N/A"
+
+            return {
+                "disease_prediction": disease,
+                "confidence": confidence,
+                "status": "success"
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Hugging Face error: {response.status_code}"
+            )
+
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Disease detection timed out")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(e)}")
+
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
     model_path    = "fertilizer_model.pkl"
