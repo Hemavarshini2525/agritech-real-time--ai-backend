@@ -36,54 +36,6 @@ app.add_middleware(
 
 init_db()
 
-TN_RAINFALL = {
-    "chennai": 1870.6,
-    "kancheepuram": 1428.9,
-    "chengalpattu": 1392.4,
-    "tiruvallur": 1682.9,
-    "cuddalore": 1454.4,
-    "villupuram": 1622.7,
-    "kallakurichi": 1290.6,
-    "vellore": 1288.0,
-    "ranipet": 1457.8,
-    "tirupathur": 1143.3,
-    "tiruvannamalai": 1470.9,
-    "salem": 1245.4,
-    "namakkal": 928.7,
-    "dharmapuri": 1139.7,
-    "krishnagiri": 1146.9,
-    "coimbatore": 1989.6,
-    "tiruppur": 846.7,
-    "erode": 807.5,
-    "tiruchirapalli": 952.6,
-    "trichy": 952.6,
-    "karur": 796.5,
-    "perambalur": 922.8,
-    "ariyalur": 1137.9,
-    "pudukkottai": 1050.8,
-    "thanjavur": 80.3,
-    "tiruvarur": 1478.4,
-    "nagapattinam": 1675.8,
-    "mayiladuthurai": 1438.1,
-    "madurai": 1038.9,
-    "theni": 1087.2,
-    "dindigul": 1175.3,
-    "ramanathapuram": 1107.6,
-    "virudhunagar": 998.9,
-    "sivagangai": 1246.3,
-    "tirunelveli": 1914.3,
-    "tenkasi": 1246.1,
-    "thoothukudi": 681.3,
-    "nilgiris": 2382.9,
-    "kanniyakumari": 1566.5,
-}
-
-def get_annual_rainfall(location: str):
-    location_lower = location.lower().strip()
-    for district, rainfall in TN_RAINFALL.items():
-        if district in location_lower:
-            return rainfall
-    return 1299.5  # State average default
 
 
 
@@ -214,7 +166,7 @@ def predict(input: PredictionInput):
         "temperature": weather_data.get("temperature"),
         "humidity": weather_data.get("humidity"),
         "ph": ph_val,
-        "rainfall": get_annual_rainfall(input.location)  
+        "rainfall":  get_seasonal_rainfall(input.location, months=3)
     }
 
     try:
