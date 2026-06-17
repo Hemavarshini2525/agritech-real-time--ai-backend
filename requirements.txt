@@ -10,3 +10,4 @@ numpy
 pandas
 httpx
 gradio_client
+google-generative-ai

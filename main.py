@@ -1,5 +1,6 @@
 import os
 import joblib
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,10 +15,28 @@ import numpy as np
 from PIL import Image
 from fastapi import UploadFile, File
 import pandas as pd
+import httpx
+import google.generativeai as genai
 
 app = FastAPI(title="AgriTech Backend API")
 
+load_dotenv()
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_recommendation_model.pkl")
+
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5")
+
+
+def get_gemini_model():
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY is not configured")
+
+    genai.configure(api_key=api_key)
+
+    return genai.GenerativeModel("gemini-2.5-flash")
+
+
 ENCODER_PATH = os.path.join(os.path.dirname(__file__), "label_encoder.pkl")
 DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.pkl")
 DISEASE_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "disease_label_encoder.pkl")
@@ -29,10 +48,12 @@ _disease_encoder = None
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*","http://localhost:5173"],  # frontend dev server
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 init_db()
 
@@ -237,16 +258,42 @@ async def predict_disease(file: UploadFile = File(...)):
             "status": "success"
         }
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Disease prediction failed: {str(e)}"
-        )
+    
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Disease detection timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(e)}")
-    
+
+
+
+@app.post("/ai-query")
+def ai_query(payload: dict):
+
+    query = payload.get("query")
+
+    if not query:
+        raise HTTPException(
+            status_code=400,
+            detail="Missing query"
+        )
+
+    try:
+        model = get_gemini_model()
+
+        response = model.generate_content(query)
+
+        return {
+            "success": True,
+            "query": query,
+            "answer": response.text
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+        
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
     model_path    = "fertilizer_model.pkl"
@@ -335,3 +382,14 @@ def history():
         for row in rows
     ]
 
+import google.generativeai as genai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+for model in genai.list_models():
+    print(model.name)
+    
