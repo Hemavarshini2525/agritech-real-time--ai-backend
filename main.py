@@ -389,18 +389,20 @@ def irrigation_recommendation(data: IrrigationInput):
     )
 
     model = load_irrigation_model()
+    print(model.feature_names_in_)
 
     features = pd.DataFrame([{
         "crop_type": data.crop_type,
         "soil_type": data.soil_type,
         "region": data.region,
         "season": data.season,
+        "groundwater_availability": data.groundwater_availability,
         "farm_size_acres": data.farm_size_acres,
         "temperature_C": temperature,
         "rainfall_mm": rainfall,
         "soil_moisture_percent": data.soil_moisture_percent,
-        "humidity_percent": humidity,
-        "groundwater_availability": data.groundwater_availability
+        "humidity_percent": humidity
+        
     }])
 
     prediction = model.predict(features)
@@ -445,4 +447,6 @@ def history():
     ]
 
 
-    
+
+model = load_irrigation_model()
+print(model.feature_names_in_)
