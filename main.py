@@ -41,6 +41,9 @@ ENCODER_PATH = os.path.join(os.path.dirname(__file__), "label_encoder.pkl")
 DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.pkl")
 DISEASE_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "disease_label_encoder.pkl")
 
+IRRIGATION_MODEL_PATH = os.path.join(os.path.dirname(__file__), "irrigation_model.pkl") 
+
+_irrigation_model = None
 _loaded_model = None
 _loaded_encoder = None
 _disease_model = None
@@ -117,6 +120,20 @@ def load_disease_encoder():
     return _disease_encoder
 
 
+def load_irrigation_model():
+    global _irrigation_model
+
+    if _irrigation_model is not None:
+        return _irrigation_model
+
+    if not os.path.exists(IRRIGATION_MODEL_PATH):
+        raise FileNotFoundError(
+            f"Irrigation model not found: {IRRIGATION_MODEL_PATH}"
+        )
+
+    _irrigation_model = joblib.load(IRRIGATION_MODEL_PATH)
+
+    return _irrigation_model
 # ─── IMAGE PREPROCESSING ───────────────────────────────────
 
 def preprocess_image(image_data: bytes, target_size=(224, 224)):
@@ -348,6 +365,51 @@ def fertilizer_recommendation(data: FertilizerInput):
         "message": f"Apply {result[0]} based on your soil and crop data"
     }
 
+@app.post("/irrigation-recommendation")
+def irrigation_recommendation(data: IrrigationInput):
+
+    weather_data = get_weather(data.location)
+
+    temperature = (
+        data.temperature_C
+        if data.temperature_C is not None
+        else weather_data.get("temperature")
+    )
+
+    humidity = (
+        data.humidity_percent
+        if data.humidity_percent is not None
+        else weather_data.get("humidity")
+    )
+
+    rainfall = (
+        data.rainfall_mm
+        if data.rainfall_mm is not None
+        else get_seasonal_rainfall(data.location, months=3)
+    )
+
+    model = load_irrigation_model()
+
+    features = pd.DataFrame([{
+        "crop_type": data.crop_type,
+        "soil_type": data.soil_type,
+        "region": data.region,
+        "season": data.season,
+        "farm_size_acres": data.farm_size_acres,
+        "temperature_C": temperature,
+        "rainfall_mm": rainfall,
+        "soil_moisture_percent": data.soil_moisture_percent,
+        "humidity_percent": humidity,
+        "groundwater_availability": data.groundwater_availability
+    }])
+
+    prediction = model.predict(features)
+
+    return {
+        "status": "success",
+        "recommended_irrigation": str(prediction[0]),
+        "used_features": features.to_dict(orient="records")[0]
+    }
 
 @app.post("/save-advisory")
 def save(data: AdvisoryInput):
@@ -382,14 +444,5 @@ def history():
         for row in rows
     ]
 
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
 
-load_dotenv()
-
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-for model in genai.list_models():
-    print(model.name)
     
