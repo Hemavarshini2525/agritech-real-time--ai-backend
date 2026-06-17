@@ -7,12 +7,12 @@ from weather import get_weather
 from database import init_db, save_advisory, get_all_history
 from soil import get_soil_data
 from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput
+from tn_rainfall import get_seasonal_rainfall
 
 import io
 import numpy as np
 from PIL import Image
 from fastapi import UploadFile, File
-
 import pandas as pd
 
 app = FastAPI(title="AgriTech Backend API")
