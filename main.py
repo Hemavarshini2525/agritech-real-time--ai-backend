@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from weather import get_weather
 from database import init_db, save_advisory, get_all_history
 from soil import get_soil_data
-from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput
+from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput, IrrigationInput
 from tn_rainfall import get_seasonal_rainfall
 
 import io
