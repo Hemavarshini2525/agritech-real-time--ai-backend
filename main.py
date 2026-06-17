@@ -61,7 +61,7 @@ TN_RAINFALL = {
     "perambalur": 922.8,
     "ariyalur": 1137.9,
     "pudukkottai": 1050.8,
-    "thanjavur": 1276.3,
+    "thanjavur": 80.3,
     "tiruvarur": 1478.4,
     "nagapattinam": 1675.8,
     "mayiladuthurai": 1438.1,
