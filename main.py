@@ -364,54 +364,71 @@ def fertilizer_recommendation(data: FertilizerInput):
         "recommended_fertilizer": result[0],
         "message": f"Apply {result[0]} based on your soil and crop data"
     }
-
 @app.post("/irrigation-recommendation")
 def irrigation_recommendation(data: IrrigationInput):
+    model_path    = "irrigation_model.pkl"
+    encoders_path = "label_encoder_irrigation.pkl"
+    target_path   = "target_encoder_irrigation.pkl"
 
-    weather_data = get_weather(data.location)
+    
 
-    temperature = (
-        data.temperature_C
-        if data.temperature_C is not None
-        else weather_data.get("temperature")
-    )
 
-    humidity = (
-        data.humidity_percent
-        if data.humidity_percent is not None
-        else weather_data.get("humidity")
-    )
+    if not os.path.exists(model_path):
+        return {
+            "status": "model_not_ready",
+            "message": "ML model not yet available.",
+            "received_data": data.dict()
+        }
 
-    rainfall = (
-        data.rainfall_mm
-        if data.rainfall_mm is not None
-        else get_seasonal_rainfall(data.location, months=3)
-    )
+    try:
+        model          = joblib.load(model_path)
+        label_encoders = joblib.load(encoders_path)  # dictionary
+        target_encoder = joblib.load(target_path)
 
-    model = load_irrigation_model()
-    print(model.feature_names_in_)
+        # Encode categorical columns using dictionary
+        crop_encoded = label_encoders["crop_type"].transform([data.crop_type])[0]
+        soil_encoded = label_encoders["soil_type"].transform([data.soil_type])[0]
+        region_encoded = label_encoders["region"].transform([data.region])[0]
+        season_encoded = label_encoders["season"].transform([data.season])[0]
+        groundwater_encoded = label_encoders["groundwater_availability"].transform([data.groundwater_availability])[0]
 
-    features = pd.DataFrame([{
-        "crop_type": data.crop_type,
-        "soil_type": data.soil_type,
-        "region": data.region,
-        "season": data.season,
-        "groundwater_availability": data.groundwater_availability,
-        "farm_size_acres": data.farm_size_acres,
-        "temperature_C": temperature,
-        "rainfall_mm": rainfall,
-        "soil_moisture_percent": data.soil_moisture_percent,
-        "humidity_percent": humidity
-        
-    }])
+        # Build feature dataframe with exact column order from training
+        features = pd.DataFrame([[
+            crop_encoded,
+            soil_encoded,
+            region_encoded,
+            season_encoded,
+            groundwater_encoded,
+            data.farm_size_acres,
+            data.temperature_C,
+            data.rainfall_mm,
+            data.soil_moisture_percent,
+            data.humidity_percent
+            
+        ]], columns=[
+            "crop_type", "soil_type", "region", "season","groundwater_availability",
+            "farm_size_acres", "temperature_C", "rainfall_mm",
+            "soil_moisture_percent", "humidity_percent"
+            
+        ])
 
-    prediction = model.predict(features)
+        prediction = model.predict(features)
+        result = target_encoder.inverse_transform(prediction)
 
-    return {
-        "status": "success",
-        "recommended_irrigation": str(prediction[0]),
-        "used_features": features.to_dict(orient="records")[0]
-    }
+        return {
+            "status": "success",
+            "recommended_irrigation": result[0],
+            "message": f"Recommended irrigation type: {result[0]}"
+        }
+
+    except KeyError as e:
+        return {
+            "status": "error",
+            "message": f"Label encoder key mismatch: {str(e)}. Check exact column names with Member 3."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Irrigation prediction failed: {str(e)}")
+
 
 @app.post("/save-advisory")
 def save(data: AdvisoryInput):
@@ -450,3 +467,6 @@ def history():
 
 model = load_irrigation_model()
 print(model.feature_names_in_)
+for route in app.routes:
+    print(route.path)
+    
