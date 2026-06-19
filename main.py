@@ -220,47 +220,54 @@ def predict(input: PredictionInput):
         X_scaled = scaler.transform(X)          # ← scale cheyyuka
 
         # Try to provide top-3 crop recommendations when model supports probabilities
-        top_3 = []
+        top_3_crops = []
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(X_scaled)[0]
             # model.classes_ should contain encoded labels used with the encoder
             classes = getattr(model, "classes_", None)
             if classes is not None:
                 top_idx = np.argsort(proba)[::-1][:3]
-                top_encoded = classes[top_idx]
-                # ensure integers for encoder
-                try:
-                    top_encoded_int = [int(x) for x in top_encoded]
-                except Exception:
-                    top_encoded_int = top_encoded
+                top_labels = np.array(classes)[top_idx]
 
-                top_crops = encoder.inverse_transform(top_encoded_int)
-                top_probs = proba[top_idx].tolist()
-
-                for enc, crop, p in zip(top_encoded_int, top_crops, top_probs):
-                    top_3.append({
-                        "crop": str(crop),
-                        "prediction_encoded": int(enc),
-                        "probability": float(p)
-                    })
+                for lbl in top_labels:
+                    # If the model's classes_ are encoded integers
+                    if isinstance(lbl, (int, np.integer)):
+                        enc = int(lbl)
+                        try:
+                            crop_name = encoder.inverse_transform([enc])[0]
+                        except Exception:
+                            crop_name = str(lbl)
+                        top_3_crops.append(str(crop_name))
+                    # If the model's classes_ are already crop names (strings)
+                    elif isinstance(lbl, str):
+                        top_3_crops.append(lbl)
+                    else:
+                        # Fallback: try to coerce to int then inverse transform
+                        try:
+                            enc = int(lbl)
+                            crop_name = encoder.inverse_transform([enc])[0]
+                            top_3_crops.append(str(crop_name))
+                        except Exception:
+                            top_3_crops.append(str(lbl))
         else:
             # Fallback: single prediction
             prediction = model.predict(X_scaled)
             predicted_encoded = int(prediction[0])
             predicted_crop = str(encoder.inverse_transform([predicted_encoded])[0])
-            top_3 = [{
-                "crop": predicted_crop,
-                "prediction_encoded": predicted_encoded,
-                "probability": None
-            }]
+            top_3_crops = [predicted_crop]
 
-        # Use the top-1 as the primary prediction for backward compatibility
-        primary = top_3[0]
+        # Use the top-1 crop as the primary prediction
+        predicted_crop = top_3_crops[0] if top_3_crops else "Unknown"
+        try:
+            # Find the encoded value for the top-1 crop
+            predicted_encoded = int(np.where(encoder.classes_ == predicted_crop)[0][0])
+        except Exception:
+            predicted_encoded = 0
 
         response = {
-            "prediction": primary["crop"],
-            "prediction_encoded": primary["prediction_encoded"],
-            "top_3": top_3,
+            "prediction": predicted_crop,
+            "prediction_encoded": predicted_encoded,
+            "top_3": top_3_crops,
             "features": feature_dict,
             "weather": weather_data,
             "soil": soil_data
