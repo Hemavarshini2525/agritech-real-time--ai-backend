@@ -193,7 +193,6 @@ def predict(input: PredictionInput):
     soil_data = get_soil_data(latitude, longitude)
     soil_error = soil_data.get("error")
 
-    # Prefer user-provided N and pH when available; otherwise use soil lookup or defaults
     N_val = input.nitrogen if input.nitrogen is not None else (soil_data.get("nitrogen") if soil_data.get("nitrogen") is not None else 50.0)
     ph_val = input.ph if input.ph is not None else (soil_data.get("ph") if soil_data.get("ph") is not None else 6.5)
 
@@ -204,18 +203,23 @@ def predict(input: PredictionInput):
         "temperature": weather_data.get("temperature"),
         "humidity": weather_data.get("humidity"),
         "ph": ph_val,
-        "rainfall":  get_seasonal_rainfall(input.location, months=3)
+        "rainfall": get_seasonal_rainfall(input.location, months=3)
     }
 
     try:
         model = load_model()
         encoder = load_encoder()
-        X = [
+        scaler = joblib.load(os.path.join(os.path.dirname(__file__), "crop_scaler.pkl"))
+
+        X = [[
             feature_dict["N"], feature_dict["P"], feature_dict["K"],
             feature_dict["temperature"], feature_dict["humidity"],
             feature_dict["ph"], feature_dict["rainfall"]
-        ]
-        prediction = model.predict([X])
+        ]]
+
+        X_scaled = scaler.transform(X)          # ← scale cheyyuka
+        prediction = model.predict(X_scaled)     # ← SCALED data use cheyyuka!
+
         predicted_encoded = int(prediction[0])
         predicted_crop = str(encoder.inverse_transform([predicted_encoded])[0])
 
@@ -233,7 +237,6 @@ def predict(input: PredictionInput):
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-
 
 
 
