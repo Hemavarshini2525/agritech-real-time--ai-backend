@@ -1,5 +1,6 @@
 import os
 import joblib
+import logging
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException
@@ -19,6 +20,10 @@ import httpx
 import google.generativeai as genai
 
 app = FastAPI(title="AgriTech Backend API")
+
+# logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_ensemble_model.pkl")
@@ -51,8 +56,8 @@ _disease_encoder = None
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*","http://localhost:5173"],  # frontend dev server
-    allow_credentials=True,
+    allow_origins=["*"],  # allow all origins; adjust for production
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -370,57 +375,59 @@ def ai_query(payload: dict):
         
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
-    model_path    = "fertilizer_model.pkl"
-    encoders_path = "label_encoder_fertilizer.pkl"
-    target_path   = "target_encoder.pkl"
+    try:
+        model_path    = "fertilizer_model.pkl"
+        encoders_path = "label_encoder_fertilizer.pkl"
+        target_path   = "target_encoder.pkl"
 
-    if not os.path.exists(model_path):
-        return {
-            "status": "model_not_ready",
-            "message": "ML model not yet available.",
-            "received_data": {
-                "crop": data.crop_type,
-                "soil": data.soil_type,
-                "N": data.nitrogen,
-                "P": data.phosphorous,
-                "K": data.potassium
+        if not os.path.exists(model_path):
+            return {
+                "status": "model_not_ready",
+                "message": "ML model not yet available.",
+                "received_data": {
+                    "crop": data.crop_type,
+                    "soil": data.soil_type,
+                    "N": data.nitrogen,
+                    "P": data.phosphorous,
+                    "K": data.potassium
+                }
             }
+
+        model          = joblib.load(model_path)
+        label_encoders = joblib.load(encoders_path)  # dictionary
+        target_encoder = joblib.load(target_path)
+
+        # Encode soil and crop using dictionary
+        soil_encoded = label_encoders["Soil Type"].transform([data.soil_type])[0]
+        crop_encoded = label_encoders["Crop Type"].transform([data.crop_type])[0]
+
+        # 8 features with correct column names
+        features = pd.DataFrame([[
+            data.temperature,
+            data.humidity,
+            data.moisture,
+            soil_encoded,
+            crop_encoded,
+            data.nitrogen,
+            data.potassium,
+            data.phosphorous,
+        ]], columns=[
+            "Temparature", "Humidity", "Moisture",
+            "Soil Type", "Crop Type",
+            "Nitrogen", "Potassium", "Phosphorous"
+        ])
+
+        prediction = model.predict(features)
+        result     = target_encoder.inverse_transform(prediction)
+
+        return {
+            "status": "success",
+            "recommended_fertilizer": result[0],
+            "message": f"Apply {result[0]} based on your soil and crop data"
         }
-
-    model          = joblib.load(model_path)
-    label_encoders = joblib.load(encoders_path)  # dictionary
-    target_encoder = joblib.load(target_path)
-
-    # Encode soil and crop using dictionary
-    soil_encoded = label_encoders["Soil Type"].transform([data.soil_type])[0]
-    crop_encoded = label_encoders["Crop Type"].transform([data.crop_type])[0]
-
-    # 8 features with correct column names
-    features = pd.DataFrame([[
-        data.temperature,
-        data.humidity,
-        data.moisture,
-        soil_encoded,
-        crop_encoded,
-        data.nitrogen,
-        data.potassium,
-        data.phosphorous,
-        
-    ]], columns=[
-        "Temparature", "Humidity", "Moisture",
-        "Soil Type", "Crop Type",
-        "Nitrogen", "Potassium", "Phosphorous"
-        
-    ])
-
-    prediction = model.predict(features)
-    result     = target_encoder.inverse_transform(prediction)
-
-    return {
-        "status": "success",
-        "recommended_fertilizer": result[0],
-        "message": f"Apply {result[0]} based on your soil and crop data"
-    }
+    except Exception as e:
+        logger.exception("Fertilizer recommendation failed")
+        raise HTTPException(status_code=500, detail=f"Fertilizer error: {str(e)}")
 @app.post("/irrigation-recommendation")
 def irrigation_recommendation(data: IrrigationInput):
     model_path    = "irrigation_model.pkl"
