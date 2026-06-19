@@ -21,7 +21,7 @@ import google.generativeai as genai
 app = FastAPI(title="AgriTech Backend API")
 
 load_dotenv()
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_recommendation_model.pkl")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_ensemble_model.pkl")
 
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5")
 
@@ -37,7 +37,7 @@ def get_gemini_model():
     return genai.GenerativeModel("gemini-2.5-flash")
 
 
-ENCODER_PATH = os.path.join(os.path.dirname(__file__), "label_encoder.pkl")
+ENCODER_PATH = os.path.join(os.path.dirname(__file__), "crop_label_encoder.pkl")
 DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.pkl")
 DISEASE_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "disease_label_encoder.pkl")
 
