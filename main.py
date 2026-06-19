@@ -34,7 +34,7 @@ def get_gemini_model():
 
     genai.configure(api_key=api_key)
 
-    return genai.GenerativeModel("gemini-2.5-flash")
+    return genai.GenerativeModel(GEMINI_MODEL)
 
 
 ENCODER_PATH = os.path.join(os.path.dirname(__file__), "crop_label_encoder.pkl")
@@ -465,8 +465,5 @@ def history():
 
 
 
-model = load_irrigation_model()
-print(model.feature_names_in_)
-for route in app.routes:
-    print(route.path)
+
     
