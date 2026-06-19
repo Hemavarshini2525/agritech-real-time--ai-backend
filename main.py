@@ -342,7 +342,19 @@ def ai_query(payload: dict):
     try:
         model = get_gemini_model()
 
-        response = model.generate_content(query)
+        prompt = f"""
+                You are an agricultural expert.
+
+                Answer the farmer's question in:
+                1. Simple language
+                2. Maximum 5 points
+                3. No technical jargon
+                4. Practical recommendations only
+
+                Question:
+                {query}
+                """
+        response = model.generate_content(prompt)
 
         return {
             "success": True,
