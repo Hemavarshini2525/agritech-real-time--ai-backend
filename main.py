@@ -10,6 +10,8 @@ from database import init_db, save_advisory, get_all_history
 from soil import get_soil_data
 from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput, IrrigationInput
 from tn_rainfall import get_seasonal_rainfall
+from tn_taluks import district_taluks, get_taluks
+
 
 import io
 import numpy as np
@@ -541,5 +543,15 @@ def history():
 
 
 
+@app.get("/tn-districts")
+def get_tn_districts():
+    return {"districts": list(district_taluks.keys())}
+
+@app.get("/tn-taluks/{district}")
+def get_taluks_for_district(district: str):
+    taluks = get_taluks(district)
+    if not taluks:
+        raise HTTPException(status_code=404, detail=f"No taluks found for district: {district}")
+    return {"district": district, "taluks": taluks}
 
     
