@@ -327,21 +327,53 @@ async def predict_disease(file: UploadFile = File(...)):
             tmp_path = tmp.name
 
         client = Client("Hemavarshini2525/agritech-disease-detection")
-        result = client.predict(
+        raw_result = client.predict(
             image=handle_file(tmp_path),
             api_name="/predict_disease"
         )
 
         os.unlink(tmp_path)
 
-        # NEW — Dictionary lookup for advice
+        confidence = None
+        result = raw_result
+
+        if isinstance(raw_result, dict):
+            confidence = raw_result.get("confidence") or raw_result.get("probability") or raw_result.get("score") or raw_result.get("prob")
+            result = raw_result.get("label") or raw_result.get("prediction") or next(iter(raw_result.values()), "")
+        elif isinstance(raw_result, (list, tuple)) and len(raw_result) > 0:
+            if len(raw_result) > 1 and isinstance(raw_result[1], (int, float)):
+                confidence = raw_result[1]
+            result = raw_result[0]
+
+        if isinstance(result, str):
+            result = result.strip()
+            if result.lower().startswith("disease:"):
+                result = result.split(":", 1)[1].strip()
+            result = result.splitlines()[0].strip()
+
+        if isinstance(confidence, str):
+            try:
+                confidence = float(confidence)
+            except ValueError:
+                confidence = None
+
+        if isinstance(confidence, (int, float)):
+            try:
+                confidence = float(confidence)
+            except Exception:
+                confidence = None
+
         advice = DISEASE_ADVICE.get(result, "Consult a local agricultural expert for specific treatment advice.")
 
-        return {
+        response = {
             "disease_prediction": result,
             "advice": advice,
             "status": "success"
         }
+        if confidence is not None:
+            response["confidence_score"] = confidence
+
+        return response
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Disease detection timed out")
@@ -560,4 +592,5 @@ def get_taluks_for_district(district: str):
         raise HTTPException(status_code=404, detail=f"No taluks found for district: {district}")
     return {"district": district, "taluks": taluks}
 
-    
+if __name__ == "__main__":
+    print(DISEASE_ADVICE.get("Pepper__bell___Bacterial_spot"))
