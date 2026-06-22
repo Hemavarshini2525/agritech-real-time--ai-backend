@@ -345,8 +345,14 @@ async def predict_disease(file: UploadFile = File(...)):
 
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Disease detection timed out")
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail="Disease prediction requires the gradio_client package. Install dependencies with `pip install -r requirements.txt` and restart the service."
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(e)}")
+
 @app.post("/ai-query")
 def ai_query(payload: dict):
 
