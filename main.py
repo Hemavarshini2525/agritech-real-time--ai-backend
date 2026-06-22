@@ -21,6 +21,25 @@ import google.generativeai as genai
 
 app = FastAPI(title="AgriTech Backend API")
 
+
+DISEASE_ADVICE = {
+    "Pepper__bell___Bacterial_spot": "Apply copper-based bactericide. Avoid overhead irrigation, use drip instead. Remove infected leaves immediately.",
+    "Pepper__bell___healthy": "Crop is healthy! Continue regular care and monitoring.",
+    "Potato___Early_blight": "Apply fungicide containing chlorothalonil. Improve air circulation between plants. Avoid wetting foliage.",
+    "Potato___Late_blight": "Apply copper-based fungicide immediately. Remove and destroy infected plants. Avoid overhead watering.",
+    "Potato___healthy": "Crop is healthy! Continue regular care and monitoring.",
+    "Tomato_Bacterial_spot": "Apply copper-based bactericide. Use disease-free seeds. Avoid working with wet plants.",
+    "Tomato_Early_blight": "Apply fungicide with chlorothalonil or copper. Remove lower infected leaves. Mulch to prevent soil splash.",
+    "Tomato_Late_blight": "Apply fungicide immediately, this spreads fast. Remove infected plants completely. Improve drainage.",
+    "Tomato_Leaf_Mold": "Improve ventilation in greenhouse/field. Reduce humidity. Apply fungicide if severe.",
+    "Tomato_Septoria_leaf_spot": "Remove infected lower leaves. Apply fungicide. Avoid overhead watering, water at soil level.",
+    "Tomato_Spider_mites_Two_spotted_spider_mite": "Apply miticide or neem oil. Increase humidity around plants. Remove heavily infested leaves.",
+    "Tomato__Target_Spot": "Apply fungicide. Improve air circulation. Remove plant debris after harvest.",
+    "Tomato__Tomato_YellowLeaf__Curl_Virus": "Remove infected plants to prevent spread. Control whitefly population (vector). Use resistant varieties next season.",
+    "Tomato__Tomato_mosaic_virus": "Remove and destroy infected plants. Disinfect tools between plants. Control aphids (vector).",
+    "Tomato_healthy": "Crop is healthy! Continue regular care and monitoring."
+}
+
 # logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -289,7 +308,6 @@ def predict(input: PredictionInput):
 
 
 
-
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
@@ -302,37 +320,31 @@ async def predict_disease(file: UploadFile = File(...)):
         import os
         from gradio_client import Client, handle_file
 
-        # Save image temporarily
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".jpg"
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
             tmp.write(image_bytes)
             tmp_path = tmp.name
 
-        # Call Hugging Face Space
         client = Client("Hemavarshini2525/agritech-disease-detection")
         result = client.predict(
             image=handle_file(tmp_path),
             api_name="/predict_disease"
         )
 
-        # Clean up temp file
         os.unlink(tmp_path)
+
+        # NEW — Dictionary lookup for advice
+        advice = DISEASE_ADVICE.get(result, "Consult a local agricultural expert for specific treatment advice.")
 
         return {
             "disease_prediction": result,
+            "advice": advice,
             "status": "success"
         }
 
-    
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Disease detection timed out")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Disease prediction failed: {str(e)}")
-
-
-
 @app.post("/ai-query")
 def ai_query(payload: dict):
 
