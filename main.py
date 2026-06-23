@@ -11,7 +11,8 @@ from soil import get_soil_data
 from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput, IrrigationInput
 from tn_rainfall import get_seasonal_rainfall
 from tn_taluks import district_taluks, get_taluks
-
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 import io
 import numpy as np
@@ -83,8 +84,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 init_db()
+
+# ─── FIREBASE INIT ──────────────────────────────────────────
+cred = credentials.Certificate(
+    os.path.join(os.path.dirname(__file__), "firebase-key.json")
+)
+firebase_admin.initialize_app(cred)
+db = firestore.client()
 
 
 
@@ -180,6 +187,15 @@ def preprocess_image(image_data: bytes, target_size=(224, 224)):
     arr = np.transpose(arr, (2, 0, 1))
     arr = np.expand_dims(arr, axis=0)
     return arr
+
+def save_to_history(feature_type: str, input_data: dict, result_data: dict):
+    db.collection("history").add({
+        "feature_type": feature_type,
+        "input_data": input_data,
+        "result_data": result_data,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
+
 
 
 # ─── ROUTES ────────────────────────────────────────────────
@@ -300,6 +316,9 @@ def predict(input: PredictionInput):
         }
         if soil_error:
             response["soil_error"] = soil_error
+
+        
+        save_to_history("crop", input.dict(), response) 
         return response
     except FileNotFoundError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -368,10 +387,11 @@ async def predict_disease(file: UploadFile = File(...)):
         response = {
             "disease_prediction": result,
             "advice": advice,
+            "confidence_score": confidence if confidence is not None else 0.0,
             "status": "success"
         }
-        if confidence is not None:
-            response["confidence_score"] = confidence
+
+        save_to_history("disease", {"filename": file.filename}, response) 
 
         return response
 
@@ -413,12 +433,15 @@ def ai_query(payload: dict):
                 """
         response = model.generate_content(prompt)
 
-        return {
+        response2 =  {
             "success": True,
             "query": query,
             "answer": response.text
         }
 
+        save_to_history("advisory", {"query": query}, response)
+
+        return response2
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -472,14 +495,20 @@ def fertilizer_recommendation(data: FertilizerInput):
         prediction = model.predict(features)
         result     = target_encoder.inverse_transform(prediction)
 
-        return {
+
+        response =  {
             "status": "success",
             "recommended_fertilizer": result[0],
             "message": f"Apply {result[0]} based on your soil and crop data"
         }
+
+        save_to_history("fertilizer", data.dict(), response) 
+        return response
     except Exception as e:
         logger.exception("Fertilizer recommendation failed")
         raise HTTPException(status_code=500, detail=f"Fertilizer error: {str(e)}")
+
+
 @app.post("/irrigation-recommendation")
 def irrigation_recommendation(data: IrrigationInput):
     model_path    = "irrigation_model.pkl"
@@ -531,11 +560,14 @@ def irrigation_recommendation(data: IrrigationInput):
         prediction = model.predict(features)
         result = target_encoder.inverse_transform(prediction)
 
-        return {
+        response =  {
             "status": "success",
             "recommended_irrigation": result[0],
             "message": f"Recommended irrigation type: {result[0]}"
         }
+
+        save_to_history("irrigation", data.dict(), response)
+        return response
 
     except KeyError as e:
         return {
@@ -563,22 +595,23 @@ def save(data: AdvisoryInput):
 
 
 @app.get("/history")
-def history():
-    rows = get_all_history()
-    return [
-        {
-            "id": row[0],
-            "farmer_query": row[1],
-            "disease": row[2],
-            "fertilizer": row[3],
-            "irrigation": row[4],
-            "weather_info": row[5],
-            "advisory_text": row[6],
-            "created_at": row[7]
-        }
-        for row in rows
-    ]
+def history(feature_type: str = None, limit: int = 50):
+    query = db.collection("history")
 
+    if feature_type:
+        query = query.where("feature_type", "==", feature_type)
+
+    query = query.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
+
+    docs = query.stream()
+
+    results = []
+    for doc in docs:
+        record = doc.to_dict()
+        record["id"] = doc.id
+        results.append(record)
+
+    return results
 
 
 @app.get("/tn-districts")
