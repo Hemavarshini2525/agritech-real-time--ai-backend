@@ -422,7 +422,7 @@ def ai_query(payload: dict):
             "answer": response.text
         }
 
-        save_to_history("advisory", {"query": query}, response)
+        save_to_history("advisory", {"query": query}, response2)
 
         return response2
     except Exception as e:
