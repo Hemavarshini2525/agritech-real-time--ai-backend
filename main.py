@@ -509,7 +509,7 @@ def irrigation_recommendation(data: IrrigationInput):
             soil_moisture_percent=data.soil_moisture_percent,
             humidity_percent=data.humidity_percent,
             groundwater_availability=data.groundwater_availability,
-            api_name="/predict"
+            api_name="/predict_irrigation"
         )
 
         return {
