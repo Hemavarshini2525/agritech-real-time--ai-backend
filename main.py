@@ -68,9 +68,6 @@ ENCODER_PATH = os.path.join(os.path.dirname(__file__), "crop_label_encoder.pkl")
 DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.pkl")
 DISEASE_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "disease_label_encoder.pkl")
 
-IRRIGATION_MODEL_PATH = os.path.join(os.path.dirname(__file__), "irrigation_model.pkl") 
-
-_irrigation_model = None
 _loaded_model = None
 _loaded_encoder = None
 _disease_model = None
@@ -153,20 +150,6 @@ def load_disease_encoder():
     return _disease_encoder
 
 
-def load_irrigation_model():
-    global _irrigation_model
-
-    if _irrigation_model is not None:
-        return _irrigation_model
-
-    if not os.path.exists(IRRIGATION_MODEL_PATH):
-        raise FileNotFoundError(
-            f"Irrigation model not found: {IRRIGATION_MODEL_PATH}"
-        )
-
-    _irrigation_model = joblib.load(IRRIGATION_MODEL_PATH)
-
-    return _irrigation_model
 # ─── IMAGE PREPROCESSING ───────────────────────────────────
 
 def preprocess_image(image_data: bytes, target_size=(224, 224)):
@@ -511,73 +494,32 @@ def fertilizer_recommendation(data: FertilizerInput):
 
 @app.post("/irrigation-recommendation")
 def irrigation_recommendation(data: IrrigationInput):
-    model_path    = "irrigation_model.pkl"
-    encoders_path = "label_encoder_irrigation.pkl"
-    target_path   = "target_encoder_irrigation.pkl"
-
-    
-
-
-    if not os.path.exists(model_path):
-        return {
-            "status": "model_not_ready",
-            "message": "ML model not yet available.",
-            "received_data": data.dict()
-        }
-
     try:
-        model          = joblib.load(model_path)
-        label_encoders = joblib.load(encoders_path)  # dictionary
-        target_encoder = joblib.load(target_path)
+        from gradio_client import Client
 
-        # Encode categorical columns using dictionary
-        crop_encoded = label_encoders["crop_type"].transform([data.crop_type])[0]
-        soil_encoded = label_encoders["soil_type"].transform([data.soil_type])[0]
-        region_encoded = label_encoders["region"].transform([data.region])[0]
-        season_encoded = label_encoders["season"].transform([data.season])[0]
-        groundwater_encoded = label_encoders["groundwater_availability"].transform([data.groundwater_availability])[0]
+        client = Client("Hemavarshini2525/agritech-irrigation-detection")
+        result = client.predict(
+            crop_type=data.crop_type,
+            soil_type=data.soil_type,
+            region=data.region,
+            season=data.season,
+            farm_size_acres=data.farm_size_acres,
+            temperature_C=data.temperature_C,
+            rainfall_mm=data.rainfall_mm,
+            soil_moisture_percent=data.soil_moisture_percent,
+            humidity_percent=data.humidity_percent,
+            groundwater_availability=data.groundwater_availability,
+            api_name="/predict"
+        )
 
-        # Build feature dataframe with exact column order from training
-        features = pd.DataFrame([[
-            crop_encoded,
-            soil_encoded,
-            region_encoded,
-            season_encoded,
-            groundwater_encoded,
-            data.farm_size_acres,
-            data.temperature_C,
-            data.rainfall_mm,
-            data.soil_moisture_percent,
-            data.humidity_percent
-            
-        ]], columns=[
-            "crop_type", "soil_type", "region", "season","groundwater_availability",
-            "farm_size_acres", "temperature_C", "rainfall_mm",
-            "soil_moisture_percent", "humidity_percent"
-            
-        ])
-
-        prediction = model.predict(features)
-        result = target_encoder.inverse_transform(prediction)
-
-        response =  {
-            "status": "success",
-            "recommended_irrigation": result[0],
-            "message": f"Recommended irrigation type: {result[0]}"
-        }
-
-        save_to_history("irrigation", data.dict(), response)
-        return response
-
-    except KeyError as e:
         return {
-            "status": "error",
-            "message": f"Label encoder key mismatch: {str(e)}. Check exact column names with Member 3."
+            "status": "success",
+            "recommended_irrigation": result,
+            "message": f"Recommended irrigation type: {result}"
         }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Irrigation prediction failed: {str(e)}")
-
-
 @app.post("/save-advisory")
 def save(data: AdvisoryInput):
     weather_data = get_weather(data.location)
