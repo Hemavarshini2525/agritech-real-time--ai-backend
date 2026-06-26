@@ -20,7 +20,7 @@ Interactive API docs: `/docs` (Swagger UI)
 
 ---
 
-## ✨ What This Backend Does
+##  What This Backend Does
 
 - **Crop Recommendation** — predicts the best crop using soil
   nutrients (N/P/K), pH, temperature, humidity, and seasonal rainfall.
@@ -102,12 +102,11 @@ pip install -r requirements.txt
 Create a `.env` file in the project root:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-1.5
+OPENWEATHER_API_KEY=33658c69e218d762161d43a43ea34a50
+GEMINI_API_KEY=AQ.Ab8RN6LyDMShPaCNpGQ9zFeF8C37bMmx-kgsflCvwNydQr04uw
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Place your Firebase service account key as `firebase-key.json` in the
-project root (do not commit this file — see Security Notes below).
 
 Run the server:
 
