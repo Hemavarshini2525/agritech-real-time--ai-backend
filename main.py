@@ -43,7 +43,26 @@ import google.generativeai as genai
 
 app = FastAPI(title="AgriTech Backend API")
 
-
+# Static treatment advice shown alongside a disease prediction.
+# Keys must exactly match the class labels returned by the disease model
+# (Hugging Face Space: Hemavarshini2525/agritech-disease-detection).
+DISEASE_ADVICE = {
+    "Pepper__bell___Bacterial_spot": "Apply copper-based bactericide. Avoid overhead irrigation, use drip instead. Remove infected leaves immediately.",
+    "Pepper__bell___healthy": "Crop is healthy! Continue regular care and monitoring.",
+    "Potato___Early_blight": "Apply fungicide containing chlorothalonil. Improve air circulation between plants. Avoid wetting foliage.",
+    "Potato___Late_blight": "Apply copper-based fungicide immediately. Remove and destroy infected plants. Avoid overhead watering.",
+    "Potato___healthy": "Crop is healthy! Continue regular care and monitoring.",
+    "Tomato_Bacterial_spot": "Apply copper-based bactericide. Use disease-free seeds. Avoid working with wet plants.",
+    "Tomato_Early_blight": "Apply fungicide with chlorothalonil or copper. Remove lower infected leaves. Mulch to prevent soil splash.",
+    "Tomato_Late_blight": "Apply fungicide immediately, this spreads fast. Remove infected plants completely. Improve drainage.",
+    "Tomato_Leaf_Mold": "Improve ventilation in greenhouse/field. Reduce humidity. Apply fungicide if severe.",
+    "Tomato_Septoria_leaf_spot": "Remove infected lower leaves. Apply fungicide. Avoid overhead watering, water at soil level.",
+    "Tomato_Spider_mites_Two_spotted_spider_mite": "Apply miticide or neem oil. Increase humidity around plants. Remove heavily infested leaves.",
+    "Tomato__Target_Spot": "Apply fungicide. Improve air circulation. Remove plant debris after harvest.",
+    "Tomato__Tomato_YellowLeaf__Curl_Virus": "Remove infected plants to prevent spread. Control whitefly population (vector). Use resistant varieties next season.",
+    "Tomato__Tomato_mosaic_virus": "Remove and destroy infected plants. Disinfect tools between plants. Control aphids (vector).",
+    "Tomato_healthy": "Crop is healthy! Continue regular care and monitoring."
+}
 
 #  LOGGING 
 logging.basicConfig(level=logging.INFO)
