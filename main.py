@@ -1,3 +1,25 @@
+"""
+AgriTech Backend API
+=====================
+
+FastAPI backend for the AgroAI Real-Time AI Crop Advisory System.
+
+Responsibilities:
+    - Crop recommendation (StackingClassifier)
+    - Fertilizer recommendation (Random Forest)
+    - Irrigation recommendation (ExtraTreesClassifier, served via Hugging Face Space)
+    - Plant disease detection (MobileNetV3, served via Hugging Face Space)
+    - Gemini-powered farmer advisory Q&A
+    - Weather + soil data lookups (external APIs)
+    - Tamil Nadu district/taluk lookups
+    - Persistent history of all predictions, stored in Firestore
+
+Persistence:
+    All history (crop / disease / fertilizer / irrigation / advisory) is stored
+    exclusively in Firebase Firestore under the "history" collection. There is
+    no local/SQLite storage in this service.
+"""
+
 import os
 import joblib
 import logging
@@ -6,17 +28,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from weather import get_weather
-from database import init_db, save_advisory, get_all_history
 from soil import get_soil_data
-from models import AdvisoryRecord, AdvisoryInput, PredictionInput, FertilizerInput, IrrigationInput
+from models import AdvisoryInput, PredictionInput, FertilizerInput, IrrigationInput
 from tn_rainfall import get_seasonal_rainfall
 from tn_taluks import district_taluks, get_taluks
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-import io
 import numpy as np
-from PIL import Image
 from fastapi import UploadFile, File
 import pandas as pd
 import httpx
@@ -25,6 +44,9 @@ import google.generativeai as genai
 app = FastAPI(title="AgriTech Backend API")
 
 
+# Static treatment advice shown alongside a disease prediction.
+# Keys must exactly match the class labels returned by the disease model
+# (Hugging Face Space: Hemavarshini2525/agritech-disease-detection).
 DISEASE_ADVICE = {
     "Pepper__bell___Bacterial_spot": "Apply copper-based bactericide. Avoid overhead irrigation, use drip instead. Remove infected leaves immediately.",
     "Pepper__bell___healthy": "Crop is healthy! Continue regular care and monitoring.",
@@ -43,17 +65,28 @@ DISEASE_ADVICE = {
     "Tomato_healthy": "Crop is healthy! Continue regular care and monitoring."
 }
 
-# logging
+# â”€â”€â”€ LOGGING â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+# Path to the trained crop-recommendation ensemble model (StackingClassifier).
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "crop_ensemble_model.pkl")
 
+# Gemini model name used for the /ai-query advisory endpoint.
+# Override via GEMINI_MODEL env var if needed (e.g. when a model is
+# deprecated or a newer/cheaper one should be used instead).
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5")
 
 
 def get_gemini_model():
+    """
+    Build a configured Gemini GenerativeModel client for the advisory endpoint.
+
+    Raises:
+        RuntimeError: if GEMINI_API_KEY is not set in the environment.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
@@ -64,14 +97,12 @@ def get_gemini_model():
     return genai.GenerativeModel(GEMINI_MODEL)
 
 
+# Paths to the crop model's label encoder.
 ENCODER_PATH = os.path.join(os.path.dirname(__file__), "crop_label_encoder.pkl")
-DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.pkl")
-DISEASE_ENCODER_PATH = os.path.join(os.path.dirname(__file__), "disease_label_encoder.pkl")
 
+# Lazily-loaded singletons for the crop model + encoder (populated on first use).
 _loaded_model = None
 _loaded_encoder = None
-_disease_model = None
-_disease_encoder = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,9 +112,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-init_db()
-
-# ─── FIREBASE INIT ──────────────────────────────────────────
+# â”€â”€â”€ FIREBASE INIT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Firestore is the single source of truth for all prediction history.
+# firebase-key.json must be present alongside this file (kept out of
+# version control â€” see .gitignore / Render secret files).
 cred = credentials.Certificate(
     os.path.join(os.path.dirname(__file__), "firebase-key.json")
 )
@@ -93,9 +125,15 @@ db = firestore.client()
 
 
 
-# ─── MODEL LOADERS ─────────────────────────────────────────
+# â”€â”€â”€ MODEL LOADERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def load_model():
+    """
+    Lazily load and cache the crop-recommendation StackingClassifier.
+
+    Raises:
+        FileNotFoundError: if the .pkl model file is missing on disk.
+    """
     global _loaded_model
     if _loaded_model is not None:
         return _loaded_model
@@ -105,6 +143,13 @@ def load_model():
     return _loaded_model
 
 def load_encoder():
+    """
+    Lazily load and cache the label encoder used to decode crop predictions
+    back into human-readable crop names.
+
+    Raises:
+        FileNotFoundError: if the .pkl encoder file is missing on disk.
+    """
     global _loaded_encoder
     if _loaded_encoder is not None:
         return _loaded_encoder
@@ -113,65 +158,16 @@ def load_encoder():
     _loaded_encoder = joblib.load(ENCODER_PATH)
     return _loaded_encoder
 
-def load_disease_model():
-    global _disease_model
-
-    if _disease_model is not None:
-        return _disease_model
-
-    print("Loading disease model...")
-
-    import torch
-
-    if not os.path.exists(DISEASE_MODEL_PATH):
-        raise FileNotFoundError(
-            f"Disease model not found: {DISEASE_MODEL_PATH}"
-        )
-
-    _disease_model = torch.load(
-        DISEASE_MODEL_PATH,
-        map_location="cpu",
-        weights_only=False
-    )
-
-    _disease_model.eval()
-
-    print("Disease model loaded.")
-
-    return _disease_model
-
-def load_disease_encoder():
-    global _disease_encoder
-    if _disease_encoder is not None:
-        return _disease_encoder
-    if not os.path.exists(DISEASE_ENCODER_PATH):
-        raise FileNotFoundError(f"Disease label encoder not found: {DISEASE_ENCODER_PATH}")
-    _disease_encoder = joblib.load(DISEASE_ENCODER_PATH)
-    return _disease_encoder
-
-
-# ─── IMAGE PREPROCESSING ───────────────────────────────────
-
-def preprocess_image(image_data: bytes, target_size=(224, 224)):
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
-    image = image.resize((256, 256))
-
-    width, height = image.size
-    left = (width - target_size[0]) / 2
-    top = (height - target_size[1]) / 2
-    right = left + target_size[0]
-    bottom = top + target_size[1]
-    image = image.crop((left, top, right, bottom))
-
-    arr = np.asarray(image, dtype=np.float32) / 255.0
-    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    arr = (arr - mean) / std
-    arr = np.transpose(arr, (2, 0, 1))
-    arr = np.expand_dims(arr, axis=0)
-    return arr
 
 def save_to_history(feature_type: str, input_data: dict, result_data: dict):
+    """
+    Persist a single prediction/advisory event to Firestore.
+
+    Args:
+        feature_type: one of "crop", "disease", "fertilizer", "irrigation", "advisory".
+        input_data: the request payload that produced this result.
+        result_data: the response payload returned to the client.
+    """
     db.collection("history").add({
         "feature_type": feature_type,
         "input_data": input_data,
@@ -181,15 +177,17 @@ def save_to_history(feature_type: str, input_data: dict, result_data: dict):
 
 
 
-# ─── ROUTES ────────────────────────────────────────────────
+# â”€â”€â”€ ROUTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.get("/")
 def root():
-    return {"message": "AgriTech Backend is running ✅"}
+    """Health check / liveness endpoint."""
+    return {"message": "AgriTech Backend is running âœ…"}
 
 
 @app.get("/weather")
 def weather(location: str):
+    """Return current weather data for a given location name."""
     result = get_weather(location)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -198,6 +196,7 @@ def weather(location: str):
 
 @app.get("/soil")
 def soil(lat: float, lon: float):
+    """Return SoilGrids soil data for given coordinates."""
     result = get_soil_data(lat, lon)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
@@ -206,6 +205,16 @@ def soil(lat: float, lon: float):
 
 @app.post("/predict")
 def predict(input: PredictionInput):
+    """
+    Recommend a crop based on soil nutrients (N/P/K), pH, weather, and rainfall.
+
+    Missing nitrogen/pH values fall back to SoilGrids data, then to hardcoded
+    defaults (N=50.0, pH=6.5) if SoilGrids has no data for the coordinates
+    (common for urban/coastal Tamil Nadu locations).
+
+    Returns the top-1 prediction plus a top-3 list (when the model supports
+    predict_proba), and saves the result to Firestore history.
+    """
     weather_data = get_weather(input.location)
     if "error" in weather_data:
         raise HTTPException(status_code=400, detail=weather_data["error"])
@@ -242,7 +251,7 @@ def predict(input: PredictionInput):
             feature_dict["ph"], feature_dict["rainfall"]
         ]]
 
-        X_scaled = scaler.transform(X)          # ← scale cheyyuka
+        X_scaled = scaler.transform(X)          # â† scale cheyyuka
 
         # Try to provide top-3 crop recommendations when model supports probabilities
         top_3_crops = []
@@ -314,6 +323,16 @@ def predict(input: PredictionInput):
 
 @app.post("/predict-disease")
 async def predict_disease(file: UploadFile = File(...)):
+    """
+    Detect plant disease from an uploaded leaf image.
+
+    Inference is delegated to the MobileNetV3 model hosted on the
+    Hugging Face Space (Hemavarshini2525/agritech-disease-detection)
+    via gradio_client. The uploaded image is written to a temp file
+    because the gradio_client API expects a file path, not raw bytes.
+
+    Saves the result to Firestore history under feature_type="disease".
+    """
     if file.content_type not in {"image/jpeg", "image/png", "image/jpg", "image/bmp"}:
         raise HTTPException(status_code=400, detail="Unsupported image type")
 
@@ -390,7 +409,13 @@ async def predict_disease(file: UploadFile = File(...)):
 
 @app.post("/ai-query")
 def ai_query(payload: dict):
+    """
+    Answer a free-form farmer question using Gemini, constrained to a
+    simple, jargon-free, max-5-point response format.
 
+    Expects payload = {"query": "<question text>"}.
+    Saves the result to Firestore history under feature_type="advisory".
+    """
     query = payload.get("query")
 
     if not query:
@@ -433,6 +458,14 @@ def ai_query(payload: dict):
         
 @app.post("/fertilizer-recommendation")
 def fertilizer_recommendation(data: FertilizerInput):
+    """
+    Recommend a fertilizer based on crop/soil type, NPK values, and
+    environmental conditions, using a Random Forest model.
+
+    Returns status="model_not_ready" with the received payload echoed
+    back if the model file isn't present on disk yet.
+    Saves the result to Firestore history under feature_type="fertilizer".
+    """
     try:
         model_path    = "fertilizer_model.pkl"
         encoders_path = "label_encoder_fertilizer.pkl"
@@ -494,6 +527,13 @@ def fertilizer_recommendation(data: FertilizerInput):
 
 @app.post("/irrigation-recommendation")
 def irrigation_recommendation(data: IrrigationInput):
+    """
+    Recommend an irrigation type based on crop/soil/region/season and
+    environmental readings, using an ExtraTreesClassifier model hosted
+    on the Hugging Face Space (Hemavarshini2525/agritech-irrigation-detection).
+
+    Saves the result to Firestore history under feature_type="irrigation".
+    """
     try:
         from gradio_client import Client
 
@@ -512,16 +552,28 @@ def irrigation_recommendation(data: IrrigationInput):
             api_name="/predict_irrigation"
         )
 
-        return {
+        response = {
             "status": "success",
             "recommended_irrigation": result,
             "message": f"Recommended irrigation type: {result}"
         }
 
+        save_to_history("irrigation", data.dict(), response)
+
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Irrigation prediction failed: {str(e)}")
 @app.post("/save-advisory")
 def save(data: AdvisoryInput):
+    """
+    Save a combined advisory record (farmer query + disease/fertilizer/
+    irrigation results + weather context) as a single document.
+
+    Previously persisted to a local SQLite database; now stored in
+    Firestore under feature_type="advisory_record" so it's visible
+    via /history alongside everything else.
+    """
     weather_data = get_weather(data.location)
     weather_info = str(weather_data)
     record = {
@@ -532,12 +584,20 @@ def save(data: AdvisoryInput):
         "weather_info": weather_info,
         "advisory_text": data.advisory_text
     }
-    save_advisory(record)
-    return {"message": "Advisory saved successfully ✅"}
+    save_to_history("advisory_record", data.dict(), record)
+    return {"message": "Advisory saved successfully âœ…"}
 
 
 @app.get("/history")
 def history(feature_type: str = None, limit: int = 50):
+    """
+    Fetch prediction/advisory history from Firestore, newest first.
+
+    Args:
+        feature_type: optional filter â€” "crop", "disease", "fertilizer",
+            "irrigation", "advisory", or "advisory_record". Omit to get all.
+        limit: max number of records to return (default 50).
+    """
     query = db.collection("history")
 
     if feature_type:
@@ -558,14 +618,19 @@ def history(feature_type: str = None, limit: int = 50):
 
 @app.get("/tn-districts")
 def get_tn_districts():
+    """Return the list of all Tamil Nadu district names."""
     return {"districts": list(district_taluks.keys())}
 
 @app.get("/tn-taluks/{district}")
 def get_taluks_for_district(district: str):
+    """Return the list of taluks for a given Tamil Nadu district."""
     taluks = get_taluks(district)
     if not taluks:
         raise HTTPException(status_code=404, detail=f"No taluks found for district: {district}")
     return {"district": district, "taluks": taluks}
 
+
 if __name__ == "__main__":
+    # Quick manual sanity check when running this file directly
+    # (e.g. `python main.py`) rather than via uvicorn.
     print(DISEASE_ADVICE.get("Pepper__bell___Bacterial_spot"))
