@@ -6,3 +6,6 @@ uploads/
 *.csv
 *.xlsx  
 agroai-history-firebase-adminsdk-fbsvc-71ff6fb103.json
+agroai-history-d7f063057acb.json
+firebase-key.json
+*firebase*.json
