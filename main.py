@@ -40,6 +40,7 @@ from fastapi import UploadFile, File
 import pandas as pd
 import httpx
 import google.generativeai as genai
+import json
 
 app = FastAPI(title="AgriTech Backend API")
 
@@ -113,11 +114,14 @@ app.add_middleware(
 
 #  FIREBASE INIT 
 # Firestore is the single source of truth for all prediction history.
-# firebase-key.json must be present alongside this file (kept out of
-# version control â€” see .gitignore / Render secret files).
-cred = credentials.Certificate(
-    os.path.join(os.path.dirname(__file__), "firebase-key.json")
-)
+# Credentials are loaded from an environment variable (not a committed
+# JSON file) for security — see Render dashboard > Environment.
+firebase_creds_json = os.getenv("FIREBASE_CREDENTIALS_JSON")
+if not firebase_creds_json:
+    raise RuntimeError("FIREBASE_CREDENTIALS_JSON is not configured")
+
+firebase_creds = json.loads(firebase_creds_json)
+cred = credentials.Certificate(firebase_creds)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
