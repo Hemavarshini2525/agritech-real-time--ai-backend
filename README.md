@@ -100,7 +100,7 @@ is no local/SQLite database in this service.
 ## ⚙️ Local Setup
 
 ```bash
-git clone https://github.com/<your-username>/agritech-real-time--ai-backend.git
+git clone https://github.com/Hemavarshini2525/agritech-real-time--ai-backend.git
 cd agritech-real-time--ai-backend
 pip install -r requirements.txt
 ```
@@ -112,7 +112,7 @@ GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL=gemini-1.5        # optional, defaults to gemini-1.5
 ```
 
-Place your Firebase service account key as `firebase-key.json` in the
+Placed our Firebase service account key as `firebase-key.json` in the
 project root (**do not commit this file** — see [Security
 Notes](#-security-notes)).
 
